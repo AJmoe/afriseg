@@ -7,10 +7,10 @@ Steps 1 to 3 run once, and their output becomes a private Kaggle dataset that la
 
 ## 0. Get the code into the notebook
 
-Push this repository to a private GitHub repo, then in the notebook run:
+The code is at https://github.com/AJmoe/afriseg. In the notebook run:
 
 ```bash
-!git clone https://github.com/<you>/afriseg.git && pip install -q -e afriseg
+!git clone https://github.com/AJmoe/afriseg.git && pip install -q -e afriseg
 ```
 
 The alternative is to upload `src/` as a Kaggle dataset and `pip install -e` it.
