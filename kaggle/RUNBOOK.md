@@ -15,11 +15,27 @@ The code is at https://github.com/AJmoe/afriseg. In the notebook run:
 
 The alternative is to upload `src/` as a Kaggle dataset and `pip install -e` it.
 
+## 0b. Get the data from official sources
+
+| Dataset | Where | Licence | Size |
+|---|---|---|---|
+| BraTS-Africa | TCIA collection "BraTS-Africa", DOI 10.7937/v8h6-8x67. Take the **processed** NIfTI download only. | CC BY 4.0 | about 1.6 GB |
+| BraTS 2021 Task 1 training | Synapse. Register, join the BraTS 2021 challenge, accept the data terms, then download the training set. | BraTS data terms: research use, cite the BraTS papers | about 13 GB |
+
+1. Download both on your own computer.
+2. Upload each one to Kaggle as a **private** dataset with "New Dataset". Share it only with
+   co-authors.
+3. Attach both datasets to your notebook.
+
+BraTS-Africa also contains 51 non-glioma tumours. Use the TCIA metadata spreadsheet to list the
+95 glioma case ids, one per line, in `splits/africa_glioma_ids.txt`. Commit that file to the repo,
+then pass it with `--ids` below.
+
 ## 1. Preprocess, on CPU, once per dataset
 
 ```bash
 !python -m afriseg.data preprocess --root /kaggle/input/<brats2021> --out /kaggle/working/npz --dataset brats2021
-!python -m afriseg.data preprocess --root /kaggle/input/<brats-africa> --out /kaggle/working/npz --dataset africa
+!python -m afriseg.data preprocess --root /kaggle/input/<brats-africa> --out /kaggle/working/npz --dataset africa --ids afriseg/splits/africa_glioma_ids.txt
 !python -m afriseg.data split --manifest /kaggle/working/npz/brats2021_manifest.csv --mode holdout --out /kaggle/working/splits/brats2021.json
 !python -m afriseg.data split --manifest /kaggle/working/npz/africa_manifest.csv  --mode kfold --k 5 --out /kaggle/working/splits/africa.json
 ```

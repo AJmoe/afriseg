@@ -95,7 +95,16 @@ def load_case(case: dict) -> tuple[np.ndarray, np.ndarray | None, dict]:
     return img, lbl, {"spacing": spacing, "scheme": scheme, "shape": img.shape[1:]}
 
 
-def preprocess(root: str, out_dir: str, dataset: str, limit: int | None = None) -> Path:
+def read_id_list(path: str) -> set[str]:
+    """Case ids from a .json list or a text file with one id per line."""
+    text = Path(path).read_text(encoding="utf-8")
+    if path.endswith(".json"):
+        return {str(x) for x in json.loads(text)}
+    return {ln.strip() for ln in text.splitlines() if ln.strip() and not ln.startswith("#")}
+
+
+def preprocess(root: str, out_dir: str, dataset: str, limit: int | None = None,
+               ids: set[str] | None = None) -> Path:
     """Crop every case to its brain bounding box; save float16 .npz plus a manifest CSV.
 
     Intensities stay RAW (not normalised) so physics-based augmentation can act on
@@ -104,6 +113,11 @@ def preprocess(root: str, out_dir: str, dataset: str, limit: int | None = None) 
     out = Path(out_dir)
     (out / dataset).mkdir(parents=True, exist_ok=True)
     cases = discover(root)
+    if ids is not None:
+        missing = ids - {c["id"] for c in cases}
+        if missing:
+            print(f"WARNING {len(missing)} listed ids not found, e.g. {sorted(missing)[:3]}")
+        cases = [c for c in cases if c["id"] in ids]
     if limit:
         cases = cases[:limit]
     if not cases:
@@ -163,6 +177,7 @@ def main() -> None:
     p.add_argument("--out", required=True)
     p.add_argument("--dataset", required=True, help="e.g. brats2021 or africa")
     p.add_argument("--limit", type=int)
+    p.add_argument("--ids", help="only these case ids (.json list or one id per line)")
     s = sub.add_parser("split")
     s.add_argument("--manifest", required=True)
     s.add_argument("--out", required=True)
@@ -171,7 +186,8 @@ def main() -> None:
     s.add_argument("--seed", type=int, default=2026)
     a = ap.parse_args()
     if a.cmd == "preprocess":
-        print("Manifest:", preprocess(a.root, a.out, a.dataset, a.limit))
+        ids = read_id_list(a.ids) if a.ids else None
+        print("Manifest:", preprocess(a.root, a.out, a.dataset, a.limit, ids))
     else:
         ids = [r["id"] for r in read_manifest(a.manifest) if r["has_label"] == "1"]
         split = make_holdout(ids, seed=a.seed) if a.mode == "holdout" else make_folds(ids, a.k, a.seed)

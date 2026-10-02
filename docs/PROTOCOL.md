@@ -51,8 +51,17 @@ This study does not depend on it.
 | BraTS 2021 Task 1 | Source training | about 1,251 labelled | 80/10/10 holdout split, seed 2026. Labels 1, 2 and 4 are harmonised to 1, 2 and 3. |
 | BraTS-Africa | Target evaluation and fine-tuning | 95 labelled glioma cases (the set used in our MIRASOL paper) | 5 folds, seed 2026. No case is ever used both to train and to test one model. |
 
-- **Access.** Both datasets need their data-use agreements (Synapse / TCIA). Re-check the licence
-  terms before putting derived files on Kaggle; keep any Kaggle dataset **private**.
+- **BraTS-Africa source.** The Cancer Imaging Archive (TCIA) collection "BraTS-Africa", DOI
+  10.7937/v8h6-8x67. Use only the *processed* NIfTI download, about 1.6 GB, licensed CC BY 4.0.
+  The unprocessed images are under NIH controlled access and are not needed.
+- **BraTS-Africa contents.** The collection has 146 patients: the 95 glioma cases plus 51 other
+  brain tumours. Only the 95 gliomas are used. Select them with the collection's metadata
+  spreadsheet, and record the selected ids in the repo.
+- **BraTS 2021 source.** The official RSNA-ASNR-MICCAI BraTS 2021 Task 1 training data from
+  Synapse, which requires registration and accepting the challenge's data terms. Cite the BraTS
+  papers the terms require. Unofficial Kaggle re-uploads are not the cited source.
+- **Kaggle copies.** Keep every Kaggle copy of either dataset **private**, and use it only by the
+  authors of this study.
 - **Preprocessing.** Both datasets are already co-registered to SRI24, at 1 mm isotropic, and
   skull-stripped. We only crop to the brain bounding box. Normalisation is a per-channel z-score
   inside the brain.
@@ -142,8 +151,9 @@ The primary test uses seed 2026.
 - **Label shift, not only image shift.** BraTS-Africa annotations may follow subtly different
   conventions. Augmentation cannot fix that. A per-region error analysis is needed, for example
   oedema boundaries and ET in low-enhancement cases.
-- **Unknown acquisition metadata.** Per-case field strength is not available, so we cannot
-  stratify by 1.5T vs 3T. Some BraTS 2021 sites are already 1.5T.
+- **Acquisition metadata.** TCIA's metadata spreadsheet lists scanner information for
+  BraTS-Africa; check whether it gives field strength per case before relying on it. BraTS 2021
+  has no per-case field strength, and some of its sites already scan at 1.5T.
 - **Transductive calibration.** Calibration uses unlabelled target images. This is realistic for a
   deploying hospital, but it must be stated. The fold 2 to 4 sensitivity analysis addresses it.
 - **Single backbone.** Our MIRASOL reviewers raised this. If compute allows, repeat A1 vs A2 with
