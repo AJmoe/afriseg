@@ -1,0 +1,184 @@
+"""Case discovery, preprocessing to compact .npz files, and patient-level splits.
+
+Usage:
+  python -m afriseg.data preprocess --root /data/BraTS2021 --out /work/npz --dataset brats2021
+  python -m afriseg.data split --manifest /work/npz/brats2021_manifest.csv --mode holdout --out splits/brats2021.json
+  python -m afriseg.data split --manifest /work/npz/africa_manifest.csv  --mode kfold --k 5 --out splits/africa.json
+"""
+from __future__ import annotations
+
+import argparse
+import csv
+import json
+import re
+from pathlib import Path
+
+import numpy as np
+
+from .labels import detect_scheme, harmonize
+
+MODALITIES = ("t1n", "t1c", "t2w", "t2f")  # channel order used everywhere
+ALIASES = {
+    "t1": "t1n", "t1n": "t1n",
+    "t1ce": "t1c", "t1c": "t1c", "t1gd": "t1c",
+    "t2": "t2w", "t2w": "t2w",
+    "flair": "t2f", "t2f": "t2f",
+    "seg": "seg",
+}
+
+
+def strip_nii(name: str) -> str:
+    for suf in (".nii.gz", ".nii"):
+        if name.endswith(suf):
+            return name[: -len(suf)]
+    return name
+
+
+def modality_of(path: Path) -> str | None:
+    if not (path.name.endswith(".nii") or path.name.endswith(".nii.gz")):
+        return None
+    token = re.split(r"[-_]", strip_nii(path.name))[-1].lower()
+    return ALIASES.get(token)
+
+
+def discover(root: str | Path) -> list[dict]:
+    """Find case folders that contain all four modalities (+ optional seg)."""
+    groups: dict[Path, dict[str, Path]] = {}
+    for p in Path(root).rglob("*.nii*"):
+        m = modality_of(p)
+        if m:
+            groups.setdefault(p.parent, {})[m] = p
+    cases = []
+    for folder, files in sorted(groups.items()):
+        if all(m in files for m in MODALITIES):
+            cases.append({
+                "id": folder.name,
+                "images": [str(files[m]) for m in MODALITIES],
+                "label": str(files["seg"]) if "seg" in files else None,
+            })
+    return cases
+
+
+def brain_bbox(img: np.ndarray, margin: int = 2) -> tuple[slice, ...]:
+    mask = (img > 0).any(axis=0)
+    if not mask.any():
+        raise ValueError("Empty volume")
+    idx = np.nonzero(mask)
+    return tuple(
+        slice(max(int(i.min()) - margin, 0), min(int(i.max()) + margin + 1, n))
+        for i, n in zip(idx, mask.shape)
+    )
+
+
+def load_case(case: dict) -> tuple[np.ndarray, np.ndarray | None, dict]:
+    import nibabel as nib
+
+    vols, spacing = [], None
+    for path in case["images"]:
+        im = nib.load(path)
+        v = np.squeeze(np.asanyarray(im.dataobj)).astype(np.float32)
+        v = np.nan_to_num(v, nan=0.0, posinf=0.0, neginf=0.0)
+        v[v < 0] = 0.0
+        vols.append(v)
+        spacing = tuple(float(s) for s in im.header.get_zooms()[:3])
+    shapes = {v.shape for v in vols}
+    if len(shapes) != 1:
+        raise ValueError(f"{case['id']}: modality shapes differ {shapes}")
+    img = np.stack(vols)
+    lbl, scheme = None, None
+    if case.get("label"):
+        seg = np.squeeze(np.asanyarray(nib.load(case["label"]).dataobj))
+        scheme = detect_scheme(seg)
+        lbl = harmonize(seg, scheme)
+        if lbl.shape != img.shape[1:]:
+            raise ValueError(f"{case['id']}: label shape {lbl.shape} != image {img.shape[1:]}")
+    return img, lbl, {"spacing": spacing, "scheme": scheme, "shape": img.shape[1:]}
+
+
+def preprocess(root: str, out_dir: str, dataset: str, limit: int | None = None) -> Path:
+    """Crop every case to its brain bounding box; save float16 .npz plus a manifest CSV.
+
+    Intensities stay RAW (not normalised) so physics-based augmentation can act on
+    magnitude images. Normalisation happens on the fly in the training transform.
+    """
+    out = Path(out_dir)
+    (out / dataset).mkdir(parents=True, exist_ok=True)
+    cases = discover(root)
+    if limit:
+        cases = cases[:limit]
+    if not cases:
+        raise SystemExit(f"No complete cases found under {root}")
+    manifest = out / f"{dataset}_manifest.csv"
+    with open(manifest, "w", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(["id", "dataset", "path", "has_label", "scheme", "spacing", "shape"])
+        for i, case in enumerate(cases):
+            img, lbl, meta = load_case(case)
+            if meta["spacing"] and any(abs(s - 1.0) > 0.05 for s in meta["spacing"]):
+                print(f"WARNING {case['id']}: spacing {meta['spacing']} is not 1 mm isotropic")
+            bb = brain_bbox(img)
+            img_c = img[(slice(None),) + bb]
+            if img_c.max() > 65000:  # float16 overflow guard
+                img_c = img_c * (65000.0 / img_c.max())
+            img_c = img_c.astype(np.float16)
+            path = out / dataset / f"{case['id']}.npz"
+            if lbl is not None:
+                np.savez_compressed(path, image=img_c, label=lbl[bb])
+            else:
+                np.savez_compressed(path, image=img_c)
+            w.writerow([case["id"], dataset, str(path), int(lbl is not None), meta["scheme"],
+                        "x".join(f"{s:.2f}" for s in meta["spacing"]),
+                        "x".join(map(str, meta["shape"]))])
+            print(f"[{i + 1}/{len(cases)}] {case['id']} -> {img_c.shape}")
+    return manifest
+
+
+def read_manifest(path: str) -> list[dict]:
+    with open(path, newline="") as fh:
+        return list(csv.DictReader(fh))
+
+
+def make_folds(ids: list[str], k: int, seed: int = 2026) -> dict[str, int]:
+    order = np.random.default_rng(seed).permutation(sorted(ids))
+    return {str(cid): int(i % k) for i, cid in enumerate(order)}
+
+
+def make_holdout(ids: list[str], fractions=(0.8, 0.1, 0.1), seed: int = 2026) -> dict[str, str]:
+    order = list(np.random.default_rng(seed).permutation(sorted(ids)))
+    n_tr = int(round(fractions[0] * len(order)))
+    n_va = int(round(fractions[1] * len(order)))
+    return {str(c): "train" if i < n_tr else ("val" if i < n_tr + n_va else "test")
+            for i, c in enumerate(order)}
+
+
+def load_split(path: str) -> dict:
+    return json.loads(Path(path).read_text())["split"]
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description="Preprocess BraTS-style NIfTI folders and make splits")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    p = sub.add_parser("preprocess")
+    p.add_argument("--root", required=True)
+    p.add_argument("--out", required=True)
+    p.add_argument("--dataset", required=True, help="e.g. brats2021 or africa")
+    p.add_argument("--limit", type=int)
+    s = sub.add_parser("split")
+    s.add_argument("--manifest", required=True)
+    s.add_argument("--out", required=True)
+    s.add_argument("--mode", choices=["holdout", "kfold"], required=True)
+    s.add_argument("--k", type=int, default=5)
+    s.add_argument("--seed", type=int, default=2026)
+    a = ap.parse_args()
+    if a.cmd == "preprocess":
+        print("Manifest:", preprocess(a.root, a.out, a.dataset, a.limit))
+    else:
+        ids = [r["id"] for r in read_manifest(a.manifest) if r["has_label"] == "1"]
+        split = make_holdout(ids, seed=a.seed) if a.mode == "holdout" else make_folds(ids, a.k, a.seed)
+        Path(a.out).parent.mkdir(parents=True, exist_ok=True)
+        Path(a.out).write_text(json.dumps({"mode": a.mode, "seed": a.seed, "split": split}, indent=1))
+        print(f"Wrote {a.out} ({len(split)} cases)")
+
+
+if __name__ == "__main__":
+    main()
