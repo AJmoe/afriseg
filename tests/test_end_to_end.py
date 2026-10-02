@@ -87,9 +87,7 @@ def test_quality_and_calibration(tmp_path):
 
 def test_preprocess_id_filter(tmp_path):
     write_cases(tmp_path / "raw", 3, "brats2023", 0)
-    (tmp_path / "ids.txt").write_text("brats2023_000
-brats2023_002
-")
+    (tmp_path / "ids.txt").write_text("brats2023_000\nbrats2023_002\n")
     m = data.preprocess(str(tmp_path / "raw"), str(tmp_path / "npz"), "africa",
                         ids=data.read_id_list(str(tmp_path / "ids.txt")))
     assert [r["id"] for r in data.read_manifest(str(m))] == ["brats2023_000", "brats2023_002"]
