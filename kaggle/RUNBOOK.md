@@ -31,6 +31,23 @@ BraTS-Africa also contains 51 non-glioma tumours. Use the TCIA metadata spreadsh
 95 glioma case ids, one per line, in `splits/africa_glioma_ids.txt`. Commit that file to the repo,
 then pass it with `--ids` below.
 
+### If the BraTS-Africa web upload fails: preprocess locally, upload once
+
+Preprocessing is light enough to run on a laptop. It turns roughly 475 small NIfTI files into
+95 compact `.npz` files plus a manifest, and the uploader then sends them as one dataset.
+
+```bash
+python -m afriseg.data preprocess --root <download>/BraTS-Africa/95_Glioma --out <download>/afriseg-africa-npz --dataset africa
+python scripts/kaggle_upload.py --dir <download>/afriseg-africa-npz --user <kaggle-username>
+```
+
+- **API key.** The uploader needs `kaggle.json`. Create it on Kaggle under Settings, then API,
+  then "Create New Token". Save it to `%USERPROFILE%\.kaggle\kaggle.json`.
+- **Visibility.** The dataset is created **private**.
+- **Using it on Kaggle.** Attach the dataset and use
+  `/kaggle/input/afriseg-brats-africa-npz/africa_manifest.csv` as the manifest. Manifest paths
+  are relative, so nothing needs rewriting. Skip the BraTS-Africa preprocess command in step 1.
+
 ## 1. Preprocess, on CPU, once per dataset
 
 ```bash
@@ -45,8 +62,8 @@ then pass it with `--ids` below.
 - **If BraTS 2021 exceeds Kaggle's 20 GB output limit,** run it in two notebooks with `--limit`,
   or keep a fixed random subset of 600 cases. Record that choice in the protocol's Deviations
   section.
-- **Paths inside the manifest are absolute.** If the files move, for example once you attach the
-  output as a dataset under `/kaggle/input/...`, rewrite the paths in the manifests with sed.
+- **Paths inside the manifest are relative to the manifest file,** so a preprocessed folder can
+  be moved or attached as a Kaggle dataset unchanged.
 
 ## 2. Calibration, CPU only, before any training on African data
 

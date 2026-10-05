@@ -140,7 +140,7 @@ def preprocess(root: str, out_dir: str, dataset: str, limit: int | None = None,
                 np.savez_compressed(path, image=img_c, label=lbl[bb])
             else:
                 np.savez_compressed(path, image=img_c)
-            w.writerow([case["id"], dataset, str(path), int(lbl is not None), meta["scheme"],
+            w.writerow([case["id"], dataset, f"{dataset}/{path.name}", int(lbl is not None), meta["scheme"],
                         "x".join(f"{s:.2f}" for s in meta["spacing"]),
                         "x".join(map(str, meta["shape"]))])
             print(f"[{i + 1}/{len(cases)}] {case['id']} -> {img_c.shape}")
@@ -148,8 +148,16 @@ def preprocess(root: str, out_dir: str, dataset: str, limit: int | None = None,
 
 
 def read_manifest(path: str) -> list[dict]:
+    """Rows of a manifest. Relative `path` entries are resolved against the manifest's folder,
+    so a preprocessed folder can be moved (e.g. uploaded to Kaggle) without rewriting it."""
+    base = Path(path).resolve().parent
     with open(path, newline="") as fh:
-        return list(csv.DictReader(fh))
+        rows = list(csv.DictReader(fh))
+    for r in rows:
+        p = Path(r["path"])
+        if not p.is_absolute():
+            r["path"] = str(base / p)
+    return rows
 
 
 def make_folds(ids: list[str], k: int, seed: int = 2026) -> dict[str, int]:

@@ -91,3 +91,12 @@ def test_preprocess_id_filter(tmp_path):
     m = data.preprocess(str(tmp_path / "raw"), str(tmp_path / "npz"), "africa",
                         ids=data.read_id_list(str(tmp_path / "ids.txt")))
     assert [r["id"] for r in data.read_manifest(str(m))] == ["brats2023_000", "brats2023_002"]
+
+
+def test_manifest_survives_moving_folder(tmp_path):
+    import shutil
+    write_cases(tmp_path / "raw", 2, "brats2023", 0)
+    data.preprocess(str(tmp_path / "raw"), str(tmp_path / "npz"), "africa")
+    shutil.move(str(tmp_path / "npz"), str(tmp_path / "moved"))
+    rows = data.read_manifest(str(tmp_path / "moved" / "africa_manifest.csv"))
+    assert all(__import__("pathlib").Path(r["path"]).exists() for r in rows)
