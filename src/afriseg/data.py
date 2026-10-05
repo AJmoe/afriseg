@@ -103,8 +103,36 @@ def read_id_list(path: str) -> set[str]:
     return {ln.strip() for ln in text.splitlines() if ln.strip() and not ln.startswith("#")}
 
 
+def _process_one(job) -> list:
+    case, out_dir, dataset = job
+    out = Path(out_dir)
+    img, lbl, meta = load_case(case)
+    if meta["spacing"] and any(abs(s - 1.0) > 0.05 for s in meta["spacing"]):
+        print(f"WARNING {case['id']}: spacing {meta['spacing']} is not 1 mm isotropic", flush=True)
+    bb = brain_bbox(img)
+    img_c = img[(slice(None),) + bb]
+    if img_c.max() > 65000:  # float16 overflow guard
+        img_c = img_c * (65000.0 / img_c.max())
+    img_c = img_c.astype(np.float16)
+    path = out / dataset / f"{case['id']}.npz"
+    if lbl is not None:
+        np.savez_compressed(path, image=img_c, label=lbl[bb])
+    else:
+        np.savez_compressed(path, image=img_c)
+    return [case["id"], dataset, f"{dataset}/{path.name}", int(lbl is not None), meta["scheme"],
+            "x".join(f"{s:.2f}" for s in meta["spacing"]), "x".join(map(str, meta["shape"]))]
+
+
+def _collect(results, n: int) -> list:
+    rows = []
+    for i, row in enumerate(results):
+        rows.append(row)
+        print(f"[{i + 1}/{n}] {row[0]}", flush=True)
+    return rows
+
+
 def preprocess(root: str, out_dir: str, dataset: str, limit: int | None = None,
-               ids: set[str] | None = None) -> Path:
+               ids: set[str] | None = None, workers: int = 1) -> Path:
     """Crop every case to its brain bounding box; save float16 .npz plus a manifest CSV.
 
     Intensities stay RAW (not normalised) so physics-based augmentation can act on
@@ -123,27 +151,18 @@ def preprocess(root: str, out_dir: str, dataset: str, limit: int | None = None,
     if not cases:
         raise SystemExit(f"No complete cases found under {root}")
     manifest = out / f"{dataset}_manifest.csv"
+    jobs = [(case, str(out), dataset) for case in cases]
+    if workers > 1:
+        from multiprocessing import Pool
+        with Pool(workers) as pool:
+            it = pool.imap(_process_one, jobs)
+            rows = _collect(it, len(cases))
+    else:
+        rows = _collect(map(_process_one, jobs), len(cases))
     with open(manifest, "w", newline="") as fh:
         w = csv.writer(fh)
         w.writerow(["id", "dataset", "path", "has_label", "scheme", "spacing", "shape"])
-        for i, case in enumerate(cases):
-            img, lbl, meta = load_case(case)
-            if meta["spacing"] and any(abs(s - 1.0) > 0.05 for s in meta["spacing"]):
-                print(f"WARNING {case['id']}: spacing {meta['spacing']} is not 1 mm isotropic")
-            bb = brain_bbox(img)
-            img_c = img[(slice(None),) + bb]
-            if img_c.max() > 65000:  # float16 overflow guard
-                img_c = img_c * (65000.0 / img_c.max())
-            img_c = img_c.astype(np.float16)
-            path = out / dataset / f"{case['id']}.npz"
-            if lbl is not None:
-                np.savez_compressed(path, image=img_c, label=lbl[bb])
-            else:
-                np.savez_compressed(path, image=img_c)
-            w.writerow([case["id"], dataset, f"{dataset}/{path.name}", int(lbl is not None), meta["scheme"],
-                        "x".join(f"{s:.2f}" for s in meta["spacing"]),
-                        "x".join(map(str, meta["shape"]))])
-            print(f"[{i + 1}/{len(cases)}] {case['id']} -> {img_c.shape}")
+        w.writerows(rows)
     return manifest
 
 
@@ -185,6 +204,7 @@ def main() -> None:
     p.add_argument("--out", required=True)
     p.add_argument("--dataset", required=True, help="e.g. brats2021 or africa")
     p.add_argument("--limit", type=int)
+    p.add_argument("--workers", type=int, default=1, help="parallel processes (Kaggle CPU: 4)")
     p.add_argument("--ids", help="only these case ids (.json list or one id per line)")
     s = sub.add_parser("split")
     s.add_argument("--manifest", required=True)
@@ -195,7 +215,7 @@ def main() -> None:
     a = ap.parse_args()
     if a.cmd == "preprocess":
         ids = read_id_list(a.ids) if a.ids else None
-        print("Manifest:", preprocess(a.root, a.out, a.dataset, a.limit, ids))
+        print("Manifest:", preprocess(a.root, a.out, a.dataset, a.limit, ids, a.workers))
     else:
         ids = [r["id"] for r in read_manifest(a.manifest) if r["has_label"] == "1"]
         split = make_holdout(ids, seed=a.seed) if a.mode == "holdout" else make_folds(ids, a.k, a.seed)

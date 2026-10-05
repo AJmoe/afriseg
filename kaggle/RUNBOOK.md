@@ -15,6 +15,10 @@ The code is at https://github.com/AJmoe/afriseg. In the notebook run:
 
 The alternative is to upload `src/` as a Kaggle dataset and `pip install -e` it.
 
+## Quick start
+
+Import `kaggle/01_prepare_and_calibrate.ipynb` into Kaggle with File, then Import Notebook, then the GitHub tab. It runs steps 1 and 2 below.
+
 ## 0b. Get the data from official sources
 
 | Dataset | Where | Licence | Size |

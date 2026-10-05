@@ -100,3 +100,10 @@ def test_manifest_survives_moving_folder(tmp_path):
     shutil.move(str(tmp_path / "npz"), str(tmp_path / "moved"))
     rows = data.read_manifest(str(tmp_path / "moved" / "africa_manifest.csv"))
     assert all(__import__("pathlib").Path(r["path"]).exists() for r in rows)
+
+
+def test_preprocess_parallel_matches_serial(tmp_path):
+    write_cases(tmp_path / "raw", 3, "brats2021", 0)
+    a = data.preprocess(str(tmp_path / "raw"), str(tmp_path / "s"), "x")
+    b = data.preprocess(str(tmp_path / "raw"), str(tmp_path / "p"), "x", workers=2)
+    assert open(a).read() == open(b).read()
