@@ -110,7 +110,15 @@ def read_id_list(path: str) -> set[str]:
     return {ln.strip() for ln in text.splitlines() if ln.strip() and not ln.startswith("#")}
 
 
-def _process_one(job) -> list:
+def _process_one(job) -> list | None:
+    try:
+        return _process_one_unsafe(job)
+    except Exception as e:  # one damaged case must not kill a 1-hour preprocessing run
+        print(f"WARNING skipped {job[0]['id']}: {type(e).__name__}: {e}", flush=True)
+        return None
+
+
+def _process_one_unsafe(job) -> list:
     case, out_dir, dataset = job
     out = Path(out_dir)
     img, lbl, meta = load_case(case)
@@ -131,10 +139,15 @@ def _process_one(job) -> list:
 
 
 def _collect(results, n: int) -> list:
-    rows = []
+    rows, skipped = [], 0
     for i, row in enumerate(results):
+        if row is None:
+            skipped += 1
+            continue
         rows.append(row)
         print(f"[{i + 1}/{n}] {row[0]}", flush=True)
+    if skipped:
+        print(f"WARNING {skipped} of {n} cases skipped (see messages above)", flush=True)
     return rows
 
 

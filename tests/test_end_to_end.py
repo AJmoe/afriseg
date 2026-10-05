@@ -113,3 +113,11 @@ def test_duplicate_case_folders_are_skipped(tmp_path):
     write_cases(tmp_path / "copy1", 2, "brats2021", 0)
     write_cases(tmp_path / "copy2", 2, "brats2021", 0)
     assert len(data.discover(tmp_path)) == 2
+
+
+def test_damaged_case_is_skipped_not_fatal(tmp_path):
+    write_cases(tmp_path / "raw", 3, "brats2021", 0)
+    bad = next((tmp_path / "raw").glob("*/*_flair.nii.gz"))
+    bad.write_bytes(b"not a nifti")
+    m = data.preprocess(str(tmp_path / "raw"), str(tmp_path / "npz"), "x", workers=2)
+    assert len(data.read_manifest(str(m))) == 2
