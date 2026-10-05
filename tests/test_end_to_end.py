@@ -107,3 +107,9 @@ def test_preprocess_parallel_matches_serial(tmp_path):
     a = data.preprocess(str(tmp_path / "raw"), str(tmp_path / "s"), "x")
     b = data.preprocess(str(tmp_path / "raw"), str(tmp_path / "p"), "x", workers=2)
     assert open(a).read() == open(b).read()
+
+
+def test_duplicate_case_folders_are_skipped(tmp_path):
+    write_cases(tmp_path / "copy1", 2, "brats2021", 0)
+    write_cases(tmp_path / "copy2", 2, "brats2021", 0)
+    assert len(data.discover(tmp_path)) == 2

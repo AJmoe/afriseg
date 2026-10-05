@@ -48,14 +48,21 @@ def discover(root: str | Path) -> list[dict]:
         m = modality_of(p)
         if m:
             groups.setdefault(p.parent, {})[m] = p
-    cases = []
+    cases, seen, dupes = [], {}, []
     for folder, files in sorted(groups.items()):
         if all(m in files for m in MODALITIES):
+            if folder.name in seen:  # same case id in two places (e.g. data extracted twice)
+                dupes.append((folder.name, str(folder), seen[folder.name]))
+                continue
+            seen[folder.name] = str(folder)
             cases.append({
                 "id": folder.name,
                 "images": [str(files[m]) for m in MODALITIES],
                 "label": str(files["seg"]) if "seg" in files else None,
             })
+    if dupes:
+        print(f"WARNING skipped {len(dupes)} duplicate case folders, e.g. {dupes[0][1]} "
+              f"(already have {dupes[0][2]})", flush=True)
     return cases
 
 
