@@ -1,8 +1,8 @@
 # Study protocol: acquisition-calibrated augmentation for glioma segmentation on BraTS-Africa
 
-Status: DRAFT v0.1 (2 October 2026). Freeze this file and the code commit hash, and post both
-on OSF, **before** any model is evaluated on BraTS-Africa. Changes after that point go in a dated
-"Deviations" section at the end, never silently.
+Status: v1.0, frozen 7 October 2026, after calibration and before any model was trained or
+evaluated. Post this file and the git commit that adds it on OSF. Every later change goes in the
+dated "Deviations" section at the end, never silently.
 
 Working title: *Calibrated 1.5T Acquisition Simulation for Label-Efficient Glioma Segmentation
 in Sub-Saharan Africa*
@@ -193,6 +193,36 @@ Target venue: a MICCAI 2027 workshop or a journal such as MELBA. Check the deadl
 To be agreed with the team before experiments start: who runs which arms on which Kaggle
 account, who does the error analysis, and who writes which section.
 
+## Calibration result (7 October 2026)
+
+Calibration ran on Kaggle CPU with the frozen splits. It used 20 randomly chosen BraTS 2021 cases,
+2 augmentation draws per case and 30 random candidates. The target was the images of BraTS-Africa
+folds 0 and 1, 38 cases, with no labels used. Two independent runs gave identical numbers.
+
+| Setting | Mean standardised Wasserstein distance |
+|---|---|
+| No augmentation | 2.071 |
+| Uncalibrated prior | 2.636 |
+| Calibrated, best of 30 candidates | 1.191 |
+
+The calibrated configuration is `configs/aug15t_calibrated.json`. In plain terms, it simulates:
+- **Thick slices** in most images: probability 0.92, slices of 4.7 to 6.6 mm.
+- **Reduced in-plane resolution** often: probability 0.65.
+- **Mild Rician noise** about half the time: probability 0.52, SNR of 39 to 46.
+- **Strong motion ghosting** occasionally: probability 0.22.
+- **Strong bias fields** occasionally: probability 0.18.
+- **Reduced contrast enhancement** at the prior setting, because measuring it would need labels.
+
+The uncalibrated prior moved the source images *further* from the target than no augmentation
+did. This is direct evidence for H3b at the image level; the training arms test it at the
+segmentation level.
+
 ## Deviations
 
-(none yet)
+1. **BraTS 2021 source.** We used the Kaggle copy of the official BraTS 2021 Task 1 training
+   archive (dschettler8845/brats-2021-task1), not a direct Synapse download. It has the official
+   1,251 cases: 1,218 with an enhancing tumour label and 33 without one.
+2. **Calibration budget.** We ran 30 candidates on 20 source cases instead of the planned 40 on 30,
+   to fit Kaggle CPU time. One candidate takes about 3 minutes. The best candidate was the first
+   one sampled, so a larger search might find a closer configuration. We keep this result rather
+   than tuning further.

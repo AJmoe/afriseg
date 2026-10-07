@@ -1,0 +1,19 @@
+{
+ "p_contrast": 0.3,
+ "enhance_alpha": [0.3, 0.9],
+ "p_bias": 0.18,
+ "bias_coeff": [0.352, 0.494],
+ "bias_order": 3,
+ "p_motion": 0.22,
+ "motion_frac": [0.07, 0.177],
+ "motion_shift": [5.026, 5.61],
+ "p_resolution": 0.65,
+ "kspace_keep": [0.479, 0.986],
+ "p_thickness": 0.92,
+ "slice_mm": [4.679, 6.55],
+ "p_slice_axis_is_z": 0.7,
+ "p_noise": 0.52,
+ "snr": [38.688, 45.966],
+ "inplane_axes": [0, 1],
+ "enabled": ["contrast", "bias", "motion", "resolution", "thickness", "noise"]
+}
