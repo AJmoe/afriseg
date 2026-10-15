@@ -10,3 +10,4 @@ quality/
 *.nii.gz
 *.npz
 *.pt
+paper/
